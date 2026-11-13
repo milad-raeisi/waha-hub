@@ -315,6 +315,18 @@ export const useServerStore = defineStore('serverStore', () => {
         return wahaAPI.setChatLabels(serverId, sessionName, chatId, labelIds)
     }
 
+    async function getAllContacts(serverId: ServerId, sessionName: string, limit: number, offset: number): Promise<any[]> {
+        return wahaAPI.getAllContacts(serverId, sessionName, limit, offset)
+    }
+
+    async function getGroups(serverId: ServerId, sessionName: string, limit: number, offset: number, excludeParticipants = true): Promise<any> {
+        return wahaAPI.getGroups(serverId, sessionName, limit, offset, excludeParticipants)
+    }
+
+    async function getLids(serverId: ServerId, sessionName: string, limit: number, offset: number): Promise<{ lid: string, pn: string | null }[]> {
+        return wahaAPI.getLids(serverId, sessionName, limit, offset)
+    }
+
     async function getGroupParticipants(serverId: ServerId, sessionName: string, groupId: string): Promise<GroupParticipant[]> {
         return wahaAPI.getGroupParticipants(serverId, sessionName, groupId)
     }
@@ -502,6 +514,9 @@ export const useServerStore = defineStore('serverStore', () => {
         getLabels,
         getChatLabels,
         setChatLabels,
+        getAllContacts,
+        getGroups,
+        getLids,
         getGroupParticipants,
         getGroupParticipantTags,
         getGroupParticipantTag,

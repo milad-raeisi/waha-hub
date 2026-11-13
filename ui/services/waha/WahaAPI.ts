@@ -257,6 +257,34 @@ export class WahaAPI {
         });
     }
 
+    getAllContacts(serverId: ServerId, sessionName: string, limit: number, offset: number): Promise<any[]> {
+        return this.api.call(serverId, {
+            method: 'GET',
+            uri: '/api/contacts/all',
+            params: {session: sessionName, limit: limit, offset: offset, sortBy: 'id', sortOrder: 'asc'},
+        });
+    }
+
+    getGroups(serverId: ServerId, sessionName: string, limit: number, offset: number, excludeParticipants = true): Promise<any> {
+        const params: Record<string, any> = {limit: limit, offset: offset, sortBy: 'id', sortOrder: 'asc'}
+        if (excludeParticipants) {
+            params.exclude = 'participants'
+        }
+        return this.api.call(serverId, {
+            method: 'GET',
+            uri: `/api/${sessionName}/groups`,
+            params: params,
+        });
+    }
+
+    getLids(serverId: ServerId, sessionName: string, limit: number, offset: number): Promise<{ lid: string, pn: string | null }[]> {
+        return this.api.call(serverId, {
+            method: 'GET',
+            uri: `/api/${sessionName}/lids`,
+            params: {limit: limit, offset: offset},
+        });
+    }
+
     getGroupParticipants(serverId: ServerId, sessionName: string, groupId: string): Promise<GroupParticipant[]> {
         return this.api.call(serverId, {
             method: 'GET',

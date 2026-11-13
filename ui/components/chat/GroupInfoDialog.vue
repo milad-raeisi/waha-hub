@@ -3,6 +3,7 @@ import {useI18n} from "vue-i18n";
 import {FilterMatchMode} from "primevue/api";
 import ContactChip from "../sessions/ContactChip.vue";
 import {useI18nDate} from "../../composables/useI18nDate";
+import {downloadText, exportFileName, formatPhone, phoneOf, toCsv, toVCards} from "../../utils/chat/contacts";
 
 const props = defineProps({
   chat: Object,
@@ -48,6 +49,39 @@ async function load() {
   }
 }
 
+// Export members of this group (CSV for Excel, vCard for phones)
+function exportParticipants(format) {
+  const tagById = new Map(tags.value.map((item) => [item.id, item.tag]))
+  const groupName = props.chat.name || props.chat.id
+  const rows = participants.value.map((participant) => ({
+    id: participant.id,
+    phone: phoneOf(participant.id) || phoneOf(participant.pn),
+    role: participant.role,
+    tag: tagById.get(participant.id) || '',
+  }))
+  const base = `whatsapp-group-${groupName}`
+  if (format === 'csv') {
+    const csv = toCsv(
+        ['phone', 'whatsapp_id', 'role', 'member_tag', 'group'],
+        rows.map((row) => [formatPhone(row.phone), row.id, row.role, row.tag, groupName]),
+        [0],
+    )
+    downloadText(csv, exportFileName(base, props.sessionName, 'csv'), 'text/csv')
+  } else {
+    const entries = rows.filter((row) => row.phone).map((row) => ({
+      name: row.tag ? `${row.tag} ${formatPhone(row.phone)}` : formatPhone(row.phone),
+      phone: row.phone,
+      note: `WhatsApp: ${groupName}`,
+    }))
+    downloadText(toVCards(entries), exportFileName(base, props.sessionName, 'vcf'), 'text/vcard')
+  }
+  toast.add({severity: 'success', summary: t('contacts.exported', {count: rows.length}), life: 2500})
+}
+
+const exportItems = computed(() => [
+  {label: t('contacts.export.vcf'), icon: 'pi pi-id-card', command: () => exportParticipants('vcf')},
+])
+
 watch(visible, (isVisible) => {
   if (!isVisible) return
   activeIndex.value = 0
@@ -92,6 +126,14 @@ watch(visible, (isVisible) => {
           <RefreshButton
               :refreshing="loading"
               @click="load"
+          />
+          <SplitButton
+              :label="t('contacts.exportCsv', {count: participants.length})"
+              icon="pi pi-file-excel"
+              size="small"
+              :model="exportItems"
+              :disabled="!participants.length"
+              @click="exportParticipants('csv')"
           />
         </div>
         <DataTable

@@ -6,6 +6,7 @@ import ChatHeader from "./ChatHeader.vue";
 import ChatList from "./ChatList.vue";
 import ChatInputFooter from "./ChatInputFooter.vue";
 import GroupMemberTagDialog from "./GroupMemberTagDialog.vue";
+import ContactsDialog from "./ContactsDialog.vue";
 import {ClientStatus, WebSocketClient} from "../../services/WebSocketService";
 import {ref} from "vue";
 import WebSocketStatus from "../events/WebSocketStatus.vue";
@@ -468,6 +469,14 @@ function clickOnChat(chat) {
   selectedChat.value = chat
 }
 
+const showContacts = ref(false)
+
+// "Open chat" from the contacts dialog - reuse the loaded chat when it is in the list
+function openChatFromContacts({id, name}) {
+  const known = chats.value.find((chat) => chat.id === id)
+  selectedChat.value = known || {id, name, picture: null}
+}
+
 //
 // Sending
 //
@@ -623,6 +632,19 @@ const showPromo = ref(false)
             @close="showPromo = false"
         ></ChatPromo>
       </div>
+      <Button
+          :label="t('contacts.open')"
+          icon="pi pi-users"
+          size="small"
+          outlined
+          @click="showContacts = true"
+      />
+      <ContactsDialog
+          v-model:visible="showContacts"
+          :serverId="session.server.id"
+          :sessionName="session.name"
+          @open-chat="openChatFromContacts"
+      />
       <div class="flex align-items-center gap-2" v-tooltip.bottom="t('chat.hiddenReadingTooltip')">
         <i class="pi pi-eye-slash text-sm" :class="{ 'text-primary': hiddenReading }"></i>
         <span class="text-sm font-medium">{{ t('chat.hiddenReading') }}</span>

@@ -144,6 +144,8 @@ onMounted(() => {
       }
     })
     resizeObserver.observe(content.value)
+    // The footer grows (attachments, reply bar) - the visible area shrinks
+    resizeObserver.observe(scroll.value)
   }
   if (typeof IntersectionObserver !== 'undefined' && sentinel.value) {
     sentinelObserver = new IntersectionObserver((records) => {
