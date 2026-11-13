@@ -134,6 +134,21 @@ export function formatDuration(seconds: number | null | undefined): string {
     return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
 }
 
+const RTL_CHAR_RE = /[֐-ࣿיִ-﷿ﹰ-﻿]/
+const LETTER_RE = /\p{L}/u
+
+/**
+ * Direction of a text by its first strong letter - the same rule as dir="auto"
+ */
+export function textDirection(text: string | null | undefined): 'rtl' | 'ltr' {
+    for (const char of String(text || '')) {
+        if (LETTER_RE.test(char)) {
+            return RTL_CHAR_RE.test(char) ? 'rtl' : 'ltr'
+        }
+    }
+    return 'ltr'
+}
+
 const SENDER_COLORS = [
     'var(--blue-500, #3b82f6)',
     'var(--orange-500, #f97316)',

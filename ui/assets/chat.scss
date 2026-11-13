@@ -17,6 +17,12 @@ $vazirmatn-weights: (300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'SemiBold
   }
 }
 
+// Chat ids / phone numbers are always LTR ("972...@c.us"), even inside the RTL (fa, ar) chat
+.chat-ui [dir='rtl'] .contact-chip__id {
+  direction: ltr;
+  text-align: right;
+}
+
 .chat-ui,
 .chat-ui .p-component,
 .chat-ui .p-inputtext,

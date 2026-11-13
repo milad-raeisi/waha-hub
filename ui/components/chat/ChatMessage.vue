@@ -8,8 +8,9 @@ import MessageAudio from "./message/MessageAudio.vue";
 import MessageDocument from "./message/MessageDocument.vue";
 import MessageStructured from "./message/MessageStructured.vue";
 import {useI18nDate} from "../../composables/useI18nDate";
-import {formatDuration, formatJid, senderColor} from "../../utils/chat/format";
+import {formatDuration, formatJid, senderColor, textDirection} from "../../utils/chat/format";
 import {KIND_ICONS, VISUAL_MEDIA_KINDS} from "../../utils/chat/messageParser";
+import {useMessageLabels} from "../../composables/chat/useMessageLabels";
 
 const props = defineProps({
   /** TimelineMessage from utils/chat/timeline */
@@ -29,6 +30,7 @@ const props = defineProps({
 const emit = defineEmits(['menu', 'jump'])
 const {t, locale} = useI18n()
 const {formatChatTimestamp} = useI18nDate()
+const {systemText: translateSystem} = useMessageLabels()
 
 const message = computed(() => props.item.message)
 const parsed = computed(() => props.item.parsed)
@@ -105,6 +107,9 @@ const spacer = computed(() => {
   if (metaMode.value !== 'inline') return 0
   return 3.4 + (fromMe.value ? 1.3 : 0) + (edited.value ? 3.6 : 0)
 })
+// The time sits where the last line of the text ends: the left side for Persian / Arabic text in an LTR layout
+const layoutDir = computed(() => ['fa', 'ar'].includes(locale.value) ? 'rtl' : 'ltr')
+const metaFlipped = computed(() => metaMode.value === 'inline' && textDirection(displayText.value) !== layoutDir.value)
 
 //
 // Centered notices
@@ -112,17 +117,17 @@ const spacer = computed(() => {
 const systemText = computed(() => {
   if (kind.value === 'call') {
     const call = parsed.value.call || {}
-    const key = call.missed
-        ? (call.video ? 'chat.message.callMissedVideo' : 'chat.message.callMissedVoice')
-        : (call.video ? 'chat.message.callVideo' : 'chat.message.callVoice')
+    const label = call.missed
+        ? (call.video ? t('chat.message.callMissedVideo') : t('chat.message.callMissedVoice'))
+        : (call.video ? t('chat.message.callVideo') : t('chat.message.callVoice'))
     const duration = call.duration ? ` (${formatDuration(call.duration)})` : ''
-    return t(key) + duration
+    return label + duration
   }
   const system = parsed.value.system || {key: 'generic', params: {}}
   const params = {...system.params}
   if (!params.users) params.users = senderName.value
   if (!params.type) params.type = parsed.value.rawType
-  return t(`chat.system.${system.key}`, params)
+  return translateSystem(system.key, params)
 })
 const systemIcon = computed(() => {
   if (kind.value === 'call') return parsed.value.call?.video ? 'pi pi-video' : 'pi pi-phone'
@@ -162,7 +167,7 @@ function openMenu(event) {
         <!-- Sender in groups -->
         <div v-if="showSender" class="sender">
           <span class="sender-name" :style="{ color: nameColor }" dir="auto">{{ senderName }}</span>
-          <span v-if="senderPhone" class="sender-phone">{{ senderPhone }}</span>
+          <span v-if="senderPhone" class="sender-phone" dir="ltr">{{ senderPhone }}</span>
           <span v-if="participantTag" class="sender-tag" v-tooltip.top="t('chat.tags.memberTag')">{{ participantTag }}</span>
         </div>
         <!-- My member tag in groups -->
@@ -250,7 +255,7 @@ function openMenu(event) {
         </template>
 
         <!-- Time, edited, ack -->
-        <div class="meta" :class="`meta-${metaMode}`">
+        <div class="meta" :class="[`meta-${metaMode}`, { 'meta-flipped': metaFlipped }]">
           <span v-if="edited" class="edited">{{ t('chat.message.edited') }}</span>
           <span v-tooltip.top="fullDate">{{ time }}</span>
           <MessageAck v-if="fromMe" :ack="message.ack" class="ack"/>
@@ -453,24 +458,26 @@ function openMenu(event) {
 
 .link-preview {
   display: flex;
-  flex-direction: column;
+  align-items: stretch;
   margin-bottom: 0.3rem;
   border-radius: 6px;
   overflow: hidden;
   background: var(--surface-ground);
   color: inherit;
   text-decoration: none;
-  max-width: 360px;
+  max-width: 380px;
 }
 
 .link-thumb {
-  width: 100%;
-  max-height: 180px;
+  flex-shrink: 0;
+  width: 5.5rem;
+  min-height: 5.5rem;
   object-fit: cover;
 }
 
 .link-info {
-  padding: 0.4rem 0.55rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
   line-height: 1.35;
 }
 
@@ -508,6 +515,11 @@ function openMenu(event) {
     position: absolute;
     bottom: 0.35rem;
     inset-inline-end: 0.55rem;
+
+    &.meta-flipped {
+      inset-inline-end: auto;
+      inset-inline-start: 0.55rem;
+    }
   }
 
   &.meta-block {

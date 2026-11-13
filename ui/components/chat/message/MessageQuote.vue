@@ -1,6 +1,6 @@
 <script setup>
-import {useI18n} from "vue-i18n";
 import {KIND_ICONS} from "../../../utils/chat/messageParser";
+import {useMessageLabels} from "../../../composables/chat/useMessageLabels";
 
 const props = defineProps({
   /** {kind, text, thumbnail, filename} - ParsedQuote or a reply target */
@@ -10,13 +10,13 @@ const props = defineProps({
   clickable: Boolean,
 })
 const emit = defineEmits(['click'])
-const {t} = useI18n()
+const {kindLabel} = useMessageLabels()
 
 const icon = computed(() => props.quote?.kind && props.quote.kind !== 'text' ? KIND_ICONS[props.quote.kind] : '')
 const text = computed(() => {
   const value = props.quote?.text || props.quote?.filename
   if (value) return value.length > 220 ? value.slice(0, 220) + '…' : value
-  if (props.quote?.kind && props.quote.kind !== 'text') return t(`chat.kind.${props.quote.kind}`)
+  if (props.quote?.kind && props.quote.kind !== 'text') return kindLabel(props.quote.kind)
   return ''
 })
 </script>

@@ -135,7 +135,7 @@ const eventDate = computed(() => {
   <div v-else-if="parsed.kind === 'group-invite'" class="card-block">
     <div class="card-icon"><i class="pi pi-users"></i></div>
     <div>
-      <div class="font-medium" dir="auto">{{ parsed.invite?.groupName || t('chat.kind.group-invite') }}</div>
+      <div class="font-medium" dir="auto">{{ parsed.invite?.groupName || t('chat.kind.groupInvite') }}</div>
       <div class="secondary">{{ t('chat.message.groupInvite') }}</div>
       <MessageText v-if="parsed.invite?.caption" :text="parsed.invite.caption" class="mt-1"/>
     </div>

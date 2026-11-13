@@ -590,7 +590,7 @@ const showPromo = ref(false)
       :modal="true"
       maximizable
       style="width: 90%; height: 90%;"
-      :contentStyle="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
+      :contentStyle="{ display: 'flex', flexDirection: 'column', overflow: 'hidden', flex: '1 1 auto', minHeight: 0 }"
   >
     <template #header>
       <div>
@@ -636,9 +636,13 @@ const showPromo = ref(false)
     </div>
 
     <Splitter class="chat-splitter" dir="ltr">
-      <template v-for="panel in panels" :key="panel">
-      <SplitterPanel v-if="panel === 'list'" :size=30 class="flex items-center justify-center chat-list-panel">
-        <div class="chat-list-inner" :dir="dir">
+      <SplitterPanel
+          v-for="panel in panels"
+          :key="panel"
+          :size="panel === 'list' ? 30 : 70"
+          :class="panel === 'list' ? 'chat-list-panel' : 'chat-panel'"
+      >
+        <div v-if="panel === 'list'" class="chat-list-inner" :dir="dir">
         <ChatList
             :chats="chats"
             :pending="pending"
@@ -653,9 +657,8 @@ const showPromo = ref(false)
             @update:merge="onMergeToggle"
         ></ChatList>
         </div>
-      </SplitterPanel>
-      <SplitterPanel v-else :size=70 class="chat-panel">
         <div
+            v-else
             class="chat-panel-inner"
             :dir="dir"
             @dragenter.prevent="onDragEnter"
@@ -724,7 +727,6 @@ const showPromo = ref(false)
           </div>
         </div>
       </SplitterPanel>
-      </template>
     </Splitter>
     </div>
   </Dialog>

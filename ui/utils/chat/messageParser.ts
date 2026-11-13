@@ -1177,8 +1177,8 @@ export function parseMessage(message: any): ParsedMessage {
 
 export interface MessagePreview {
     icon: string
-    /** i18n key for the type label, e.g. "Photo" */
-    labelKey: string
+    /** Kind to show a type label for ("Photo"), empty for plain text */
+    labelKind: MessageKind | ''
     text: string
 }
 
@@ -1210,7 +1210,7 @@ export const KIND_ICONS: Partial<Record<MessageKind, string>> = {
 export function messagePreview(parsed: ParsedMessage): MessagePreview {
     const kind = parsed.kind
     const icon = KIND_ICONS[kind] || ''
-    const labelKey = kind === 'text' ? '' : `chat.kind.${kind}`
+    const labelKind = kind === 'text' ? '' : kind
     let text = ''
     switch (kind) {
         case 'text':
@@ -1228,7 +1228,7 @@ export function messagePreview(parsed: ParsedMessage): MessagePreview {
         default:
             text = quoteText(parsed)
     }
-    return {icon, labelKey, text}
+    return {icon, labelKind, text}
 }
 
 function formatSeconds(seconds: number): string {
