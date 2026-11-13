@@ -1,0 +1,30 @@
+// Chat UI global styles (not scoped - menus, tooltips and dialogs are teleported to <body>).
+//
+// Vazirmatn "Non-Latin" build: Arabic script glyphs only (Persian, Arabic, Urdu...).
+// unicode-range makes the browser use it just for those characters, Latin text keeps the theme font,
+// and the files are downloaded only when such text is actually on the screen.
+$vazirmatn-path: '../node_modules/vazirmatn/misc/Non-Latin/fonts/webfonts';
+$vazirmatn-weights: (300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'SemiBold', 700: 'Bold');
+
+@each $weight, $name in $vazirmatn-weights {
+  @font-face {
+    font-family: 'Vazirmatn Chat';
+    src: url('#{$vazirmatn-path}/Vazirmatn-NL-#{$name}.woff2') format('woff2');
+    font-weight: $weight;
+    font-style: normal;
+    font-display: swap;
+    unicode-range: U+0600-06FF, U+0750-077F, U+0870-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200F, U+2066-2069;
+  }
+}
+
+.chat-ui,
+.chat-ui .p-component,
+.chat-ui .p-inputtext,
+.chat-ui button,
+.chat-ui input,
+.chat-ui textarea,
+.chat-popup,
+.chat-popup .p-component,
+.chat-popup .p-menuitem-text {
+  font-family: 'Vazirmatn Chat', var(--font-family);
+}

@@ -57,6 +57,7 @@ export default defineNuxtConfig({
         '@fortawesome/fontawesome-svg-core/styles.css',
         // Custom
         '@/assets/styles.scss',
+        '@/assets/chat.scss',
         'vue-json-pretty/lib/styles.css'
     ],
     i18n: {

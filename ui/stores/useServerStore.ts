@@ -361,20 +361,20 @@ export const useServerStore = defineStore('serverStore', () => {
         return wahaAPI.readChatMessages(serverId, sessionName, chatId, options)
     }
 
-    async function sendImage(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string): Promise<any> {
-        return wahaAPI.sendImage(serverId, sessionName, chatId, file, caption)
+    async function sendImage(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string, replyTo?: string): Promise<any> {
+        return wahaAPI.sendImage(serverId, sessionName, chatId, file, caption, replyTo)
     }
 
-    async function sendVideo(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string): Promise<any> {
-        return wahaAPI.sendVideo(serverId, sessionName, chatId, file, caption)
+    async function sendVideo(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string, replyTo?: string): Promise<any> {
+        return wahaAPI.sendVideo(serverId, sessionName, chatId, file, caption, replyTo)
     }
 
-    async function sendVoice(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile): Promise<any> {
-        return wahaAPI.sendVoice(serverId, sessionName, chatId, file)
+    async function sendVoice(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, replyTo?: string): Promise<any> {
+        return wahaAPI.sendVoice(serverId, sessionName, chatId, file, replyTo)
     }
 
-    async function sendFile(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string): Promise<any> {
-        return wahaAPI.sendFile(serverId, sessionName, chatId, file, caption)
+    async function sendFile(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string, replyTo?: string): Promise<any> {
+        return wahaAPI.sendFile(serverId, sessionName, chatId, file, caption, replyTo)
     }
 
     async function sendText(
@@ -382,8 +382,9 @@ export const useServerStore = defineStore('serverStore', () => {
         sessionName: string,
         chatId: string,
         text: string,
+        replyTo?: string,
     ): Promise<string> {
-        return wahaAPI.sendText(serverId, sessionName, chatId, text)
+        return wahaAPI.sendText(serverId, sessionName, chatId, text, replyTo)
     }
 
     async function getPairingCode(serverId: ServerId, sessionName: string, phone): Promise<string> {

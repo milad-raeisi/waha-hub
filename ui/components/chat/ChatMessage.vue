@@ -1,447 +1,600 @@
 <script setup>
-import {computed} from 'vue'
-import MessageAck from "./MessageAck.vue";
-import {useI18nDate} from '../../composables/useI18nDate'
-import JsonDataViewer from "../common/JsonDataViewer.vue";
-import InlineMessage from "primevue/inlinemessage";
 import {useI18n} from "vue-i18n";
-import {useToast} from "primevue/usetoast";
-
-const {t} = useI18n();
-const toast = useToast();
+import MessageAck from "./MessageAck.vue";
+import MessageText from "./message/MessageText.vue";
+import MessageQuote from "./message/MessageQuote.vue";
+import MessageVisualMedia from "./message/MessageVisualMedia.vue";
+import MessageAudio from "./message/MessageAudio.vue";
+import MessageDocument from "./message/MessageDocument.vue";
+import MessageStructured from "./message/MessageStructured.vue";
+import {useI18nDate} from "../../composables/useI18nDate";
+import {formatDuration, formatJid, senderColor} from "../../utils/chat/format";
+import {KIND_ICONS, VISUAL_MEDIA_KINDS} from "../../utils/chat/messageParser";
 
 const props = defineProps({
-  message: Object,
+  /** TimelineMessage from utils/chat/timeline */
+  item: Object,
   serverId: String,
   sessionName: String,
-  participantTags: Object,
+  isGroup: Boolean,
+  participantTag: String,
   myTag: String,
   editMyTag: Function,
+  /** (jid) => display name or null */
+  nameOf: Function,
+  /** number -> name, for @mentions */
+  mentions: Object,
+  highlighted: Boolean,
 })
-
-const participantTag = computed(() => {
-  if (!props.participantTags || !props.message?.participant) return null
-  return props.participantTags[props.message.participant] || null
-})
-
-const Ack = {
-  ERROR: -1,
-  PENDING: 0,
-  SERVER: 1,
-  DEVICE: 2,
-  READ: 3,
-  PLAYED: 4,
-}
-
+const emit = defineEmits(['menu', 'jump'])
+const {t, locale} = useI18n()
 const {formatChatTimestamp} = useI18nDate()
 
-const date = computed(() => formatChatTimestamp(props.message?.timestamp))
-const showDetails = ref(false)
-
-const CENTER_MESSAGE_TYPES = ['e2e_notification', 'notification_template']
-const isCenterMessage = computed(() => {
-  const type = props.message?._data?.type || props.message?.type
-  return CENTER_MESSAGE_TYPES.includes(type)
-})
-
-const centerMessageKey = computed(() => {
-  const type = props.message?._data?.type || props.message?.type
-  const subtype = props.message?._data?.subtype || props.message?.subtype
-  if (type === 'notification_template' && subtype === 'disappearing_mode_update') {
-    return 'chat.message.disappearing-mode-update'
-  }
-  return 'chat.message.e2e-notification'
-})
-
-const messageAlignClass = computed(() => {
-  if (isCenterMessage.value) return 'flex justify-content-center'
-  if (props.message?.fromMe) return 'flex justify-content-end'
-  return ''
-})
-
-function view() {
-  showDetails.value = !showDetails.value
-}
+const message = computed(() => props.item.message)
+const parsed = computed(() => props.item.parsed)
+const kind = computed(() => props.item.revoked ? 'revoked' : parsed.value.kind)
+const fromMe = computed(() => !!message.value.fromMe)
 
 //
-// Media preview
+// Sender
 //
-const store = useServerStore()
+const senderJid = computed(() => message.value.participant || message.value.author || message.value.from)
+const showSender = computed(() => props.isGroup && !fromMe.value && props.item.firstInGroup)
+const senderName = computed(() => parsed.value.senderName || props.nameOf?.(senderJid.value) || formatJid(senderJid.value))
+const senderPhone = computed(() => {
+  const phone = formatJid(senderJid.value)
+  return phone && phone !== senderName.value ? phone : ''
+})
+const nameColor = computed(() => senderColor(props.item.senderId))
 
-const mediaBlobUrl = ref(null)
-const mediaThumbnailUrl = ref(null)
-const mediaLoading = ref(false)
-const mediaFailed = ref(false)
-const mediaMimetype = ref(null)
-const mediaFilename = ref(null)
+const quoteSender = computed(() => {
+  const participant = parsed.value.quote?.participant
+  if (!participant) return props.isGroup ? '' : (fromMe.value ? t('chat.message.you') : '')
+  return props.nameOf?.(participant) || formatJid(participant)
+})
+const quoteColor = computed(() => senderColor(parsed.value.quote?.participant))
 
-const mediaType = computed(() => {
-  const mime = mediaMimetype.value || ''
-  if (mime.startsWith('image/')) return 'image'
-  if (mime.startsWith('video/')) return 'video'
-  if (mime.startsWith('audio/')) return 'audio'
-  return 'other'
+//
+// Content
+//
+const isVisual = computed(() => VISUAL_MEDIA_KINDS.includes(kind.value))
+const isAudio = computed(() => ['voice', 'audio'].includes(kind.value))
+const isStructured = computed(() => ['location', 'contacts', 'poll', 'event', 'group-invite', 'interactive'].includes(kind.value))
+const isSticker = computed(() => kind.value === 'sticker')
+const edited = computed(() => parsed.value.edited || props.item.editedText !== null)
+
+const displayText = computed(() => {
+  if (['revoked', 'pending', 'interactive', 'unsupported'].includes(kind.value)) return ''
+  if (isStructured.value || isAudio.value || isSticker.value) return ''
+  return props.item.editedText ?? parsed.value.text ?? ''
 })
 
-const isFile = computed(() => !!(mediaFilename.value || props.message?.media?.filename))
-
-function thumbToBase64(thumb) {
-  if (!thumb) return null
-  // GOWS/WEBJS - plain base64 string
-  if (typeof thumb === 'string') return thumb
-  // NOWEB - buffers serialized as { type: 'Buffer', data: base64 }
-  if (thumb.type === 'Buffer' && typeof thumb.data === 'string') return thumb.data
-  return null
-}
-
-function initThumbnail() {
-  if (!props.message?.hasMedia) return
-  // WEBJS: _data.body is always a JPEG thumbnail for image/video types.
-  const dataBody = props.message._data?.body
-  const dataMime = props.message._data?.mimetype
-  const dataType = props.message._data?.type
-  if (dataBody && (dataType === 'image' || dataType === 'video')) {
-    mediaMimetype.value = dataMime || (dataType === 'image' ? 'image/jpeg' : 'video/mp4')
-    mediaThumbnailUrl.value = `data:image/jpeg;base64,${dataBody}`
-    return
-  }
-  // GOWS: _data.Message (capital M), JPEGThumbnail (all caps)
-  // NOWEB: _data.message (lowercase m), jpegThumbnail (camelCase)
-  const rawMsg = props.message._data?.Message || props.message._data?.message
-  if (!rawMsg) return
-  const imgMsg = rawMsg.imageMessage
-  const vidMsg = rawMsg.videoMessage
-  const docMsg = rawMsg.documentMessage
-  const audMsg = rawMsg.audioMessage
-  if (imgMsg) {
-    mediaMimetype.value = imgMsg.mimetype || 'image/jpeg'
-    const thumb = thumbToBase64(imgMsg.JPEGThumbnail || imgMsg.jpegThumbnail)
-    if (thumb) mediaThumbnailUrl.value = `data:image/jpeg;base64,${thumb}`
-  } else if (vidMsg) {
-    mediaMimetype.value = vidMsg.mimetype || 'video/mp4'
-    const thumb = thumbToBase64(vidMsg.JPEGThumbnail || vidMsg.jpegThumbnail)
-    if (thumb) mediaThumbnailUrl.value = `data:image/jpeg;base64,${thumb}`
-  } else if (docMsg) {
-    mediaMimetype.value = docMsg.mimetype || 'application/octet-stream'
-    if (docMsg.fileName) mediaFilename.value = docMsg.fileName
-    const thumb = thumbToBase64(docMsg.JPEGThumbnail || docMsg.jpegThumbnail)
-    if (thumb) mediaThumbnailUrl.value = `data:image/jpeg;base64,${thumb}`
-  } else if (audMsg) {
-    mediaMimetype.value = audMsg.mimetype || 'audio/ogg'
-  }
-}
-
-function mediaDownloadFailed(detail) {
-  mediaFailed.value = true
-  toast.add({
-    severity: 'error',
-    summary: t('chat.message.downloadFailedTitle'),
-    detail: detail,
-    life: 5000,
-  })
-}
-
-async function downloadMedia() {
-  if (!props.message?.hasMedia || !props.serverId || !props.sessionName) return
-  if (mediaBlobUrl.value || mediaLoading.value) return
-
-  const chatId = props.message.id.split('_')[1] ?? 'all'
-
-  mediaLoading.value = true
-  mediaFailed.value = false
+const linkPreview = computed(() => {
+  const preview = parsed.value.linkPreview
+  if (!preview || kind.value !== 'text' || !preview.url) return null
+  const href = /^https?:\/\//i.test(preview.url) ? preview.url : `https://${preview.url}`
+  let domain = ''
   try {
-    const fullMessage = await store.getChatMessage(
-        props.serverId,
-        props.sessionName,
-        props.message.id,
-        chatId,
-    )
-    // Merge full message data back so the JSON viewer shows media fields
-    Object.assign(props.message, fullMessage)
-
-    const url = fullMessage?.media?.url
-    const mime = fullMessage?.media?.mimetype
-    const filename = fullMessage?.media?.filename
-    if (!url) {
-      // media.error is a serialized Error - "details" holds the stack, first line is "Name: message"
-      const error = fullMessage?.media?.error
-      const detail = error?.message || error?.details?.split('\n')[0]
-      mediaDownloadFailed(detail || t('chat.message.downloadFailedNoUrl'))
-      return
-    }
-    mediaMimetype.value = mime || ''
-    if (filename) mediaFilename.value = filename
-
-    const connection = store.getServer(props.serverId)?.connection
-    const headers = {}
-    if (connection?.key) {
-      headers['X-Api-Key'] = connection.key
-    }
-    const response = await fetch(url, {headers: headers})
-    if (!response.ok) {
-      mediaDownloadFailed(`${response.status} ${response.statusText}`.trim())
-      return
-    }
-    const blob = await response.blob()
-    mediaBlobUrl.value = URL.createObjectURL(blob)
-  } catch (e) {
-    console.error('Failed to download media', e)
-    mediaDownloadFailed(e?.response?.data?.message || e?.message || String(e))
-  } finally {
-    mediaLoading.value = false
+    domain = new URL(href).hostname.replace(/^www\./, '')
+  } catch {
+    return null
   }
-}
-
-function saveMedia() {
-  const url = mediaBlobUrl.value
-  if (!url) return
-  let name = mediaFilename.value
-  if (!name) {
-    const ext = (mediaMimetype.value || '').split('/')[1]?.split(';')[0] || 'bin'
-    name = `${props.message.id}.${ext}`
-  }
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-}
-
-onMounted(() => {
-  initThumbnail()
+  return {...preview, href, domain}
 })
 
-onUnmounted(() => {
-  if (mediaBlobUrl.value?.startsWith('blob:')) {
-    URL.revokeObjectURL(mediaBlobUrl.value)
-  }
+const jumbo = computed(() => kind.value === 'text' && !parsed.value.quote && !linkPreview.value && !parsed.value.forwarded)
+
+//
+// Meta: time, edited, ack
+//
+const time = computed(() => {
+  const value = Number(message.value.timestamp)
+  if (!value) return ''
+  const date = new Date(value < 1e12 ? value * 1000 : value)
+  return new Intl.DateTimeFormat(locale.value || undefined, {hour: '2-digit', minute: '2-digit'}).format(date)
 })
+const fullDate = computed(() => formatChatTimestamp(message.value.timestamp))
+
+// "overlay" - on top of media, "inline" - at the end of the text, "block" - own line
+const metaMode = computed(() => {
+  if (isVisual.value && !displayText.value && !parsed.value.media?.viewOnce && !['revoked'].includes(kind.value)) return 'overlay'
+  if (displayText.value) return 'inline'
+  return 'block'
+})
+const spacer = computed(() => {
+  if (metaMode.value !== 'inline') return 0
+  return 3.4 + (fromMe.value ? 1.3 : 0) + (edited.value ? 3.6 : 0)
+})
+
+//
+// Centered notices
+//
+const systemText = computed(() => {
+  if (kind.value === 'call') {
+    const call = parsed.value.call || {}
+    const key = call.missed
+        ? (call.video ? 'chat.message.callMissedVideo' : 'chat.message.callMissedVoice')
+        : (call.video ? 'chat.message.callVideo' : 'chat.message.callVoice')
+    const duration = call.duration ? ` (${formatDuration(call.duration)})` : ''
+    return t(key) + duration
+  }
+  const system = parsed.value.system || {key: 'generic', params: {}}
+  const params = {...system.params}
+  if (!params.users) params.users = senderName.value
+  if (!params.type) params.type = parsed.value.rawType
+  return t(`chat.system.${system.key}`, params)
+})
+const systemIcon = computed(() => {
+  if (kind.value === 'call') return parsed.value.call?.video ? 'pi pi-video' : 'pi pi-phone'
+  if (parsed.value.system?.key === 'e2e') return 'pi pi-lock'
+  if (parsed.value.system?.key === 'disappearing') return 'pi pi-clock'
+  return KIND_ICONS.system
+})
+
+function openMenu(event) {
+  emit('menu', event, props.item)
+}
 </script>
 
-
 <template>
-  <div :class="messageAlignClass">
-    <Chip :class="showDetails? 'chip-100' :'chip-70'" class="py-1 px-3">
-      <div>
-        <!-- From -->
-        <div v-if="!message.fromMe && message.participant">
-          <div class="p-text-secondary my-1" style="font-size: 0.9rem">{{ message.participant }}</div>
-          <div v-if="participantTag" class="p-text-secondary my-1" style="font-size: 0.8rem">
-            <span v-tooltip.top="t('chat.tags.memberTag')">{{ participantTag }}</span>
-          </div>
+  <div
+      class="msg-row"
+      :class="{ out: fromMe, in: !fromMe, center: item.centered, grouped: !item.firstInGroup, highlighted }"
+      :data-key="item.key"
+  >
+    <!-- Centered notice: system events, calls -->
+    <div v-if="item.centered" class="notice" :class="{ missed: kind === 'call' && parsed.call?.missed }">
+      <i :class="systemIcon"></i>
+      <span dir="auto">{{ systemText }}</span>
+      <span class="notice-time" v-tooltip.top="fullDate">{{ time }}</span>
+    </div>
+
+    <template v-else>
+      <div
+          class="bubble"
+          :class="{ first: item.firstInGroup, sticker: isSticker && !parsed.quote, visual: isVisual }"
+          @contextmenu.prevent="openMenu"
+      >
+        <button type="button" class="menu-trigger" :aria-label="t('chat.message.actions.title')" @click="openMenu">
+          <i class="pi pi-angle-down"></i>
+        </button>
+
+        <!-- Sender in groups -->
+        <div v-if="showSender" class="sender">
+          <span class="sender-name" :style="{ color: nameColor }" dir="auto">{{ senderName }}</span>
+          <span v-if="senderPhone" class="sender-phone">{{ senderPhone }}</span>
+          <span v-if="participantTag" class="sender-tag" v-tooltip.top="t('chat.tags.memberTag')">{{ participantTag }}</span>
         </div>
-        <!-- My tag in the group -->
-        <div v-if="message.fromMe && editMyTag" class="my-1" style="font-size: 0.8rem">
-          <a href="#" class="p-text-secondary" v-tooltip.top="t('chat.tags.clickToEdit')" @click.prevent="editMyTag">
+        <!-- My member tag in groups -->
+        <div v-if="fromMe && editMyTag && item.firstInGroup" class="sender">
+          <a href="#" class="sender-tag" v-tooltip.top="t('chat.tags.clickToEdit')" @click.prevent="editMyTag">
             <template v-if="myTag">{{ myTag }}</template>
-            <template v-else><i class="pi pi-tag" style="font-size: 0.7rem"></i> {{ t('chat.tags.add') }}</template>
+            <template v-else><i class="pi pi-tag"></i> {{ t('chat.tags.add') }}</template>
           </a>
         </div>
 
-        <!-- Body + ACK -->
-        <div class="flex">
-          <div class="flex-1">
-            <!-- Center system message body -->
-            <template v-if="isCenterMessage">
-              <span class="p-text-secondary" style="font-size: 0.85rem">{{ t(centerMessageKey) }}</span>
-            </template>
-            <!-- Not Supported Message -->
-            <template v-else-if="!message.body && !message.hasMedia">
-              <InlineMessage severity="warn" class="mt-2">
-                <p v-html="t('chat.message.not-supported')"></p>
-              </InlineMessage>
-            </template>
-            <!-- Media Message -->
-            <template v-if="message.hasMedia">
-              <!-- 1. Open on phone sign -->
-              <div class="flex justify-content-center mt-1 mb-1">
-                <InlineMessage severity="info">
-                  <template #icon>
-                    <i class="pi pi-mobile mr-2"></i>
-                  </template>
-                  <p v-html="t('chat.message.media')"></p>
-                </InlineMessage>
-              </div>
-              <!-- 2. Media preview -->
-              <!-- Loading skeleton (only when no thumbnail available yet) -->
-              <div v-if="mediaLoading && !mediaThumbnailUrl" class="my-2 flex justify-content-center">
-                <Skeleton width="120px" height="80px" border-radius="6px"/>
-              </div>
-              <!-- Thumbnail or full blob -->
-              <div v-else-if="mediaBlobUrl || mediaThumbnailUrl" class="my-2 flex flex-column align-items-center gap-1">
-                <!-- Image: overlay download button on top of preview -->
-                <div v-if="mediaType === 'image' && !isFile" class="media-overlay-wrapper">
-                  <img
-                      :src="mediaBlobUrl || mediaThumbnailUrl"
-                      class="media-preview-image"
-                      alt="media"
-                  />
-                  <div v-if="!mediaBlobUrl" class="media-overlay" @click="downloadMedia">
-                    <Button
-                        icon="pi pi-download"
-                        rounded
-                        :loading="mediaLoading"
-                        :aria-label="t('chat.message.download')"
-                    />
-                  </div>
-                </div>
-                <!-- Video: overlay download button on poster -->
-                <div v-else-if="mediaType === 'video' && !isFile" class="media-overlay-wrapper">
-                  <video
-                      :src="mediaBlobUrl || undefined"
-                      :poster="mediaThumbnailUrl || undefined"
-                      :controls="!!mediaBlobUrl"
-                      class="media-preview-video"
-                  />
-                  <div v-if="!mediaBlobUrl" class="media-overlay" @click="downloadMedia">
-                    <Button
-                        icon="pi pi-download"
-                        rounded
-                        :loading="mediaLoading"
-                        :aria-label="t('chat.message.download')"
-                    />
-                  </div>
-                </div>
-                <!-- Audio: no thumbnail, just controls -->
-                <audio
-                    v-else-if="mediaType === 'audio' && !isFile"
-                    :src="mediaBlobUrl"
-                    controls
-                    class="media-preview-audio"
-                />
-                <!-- File / unknown type -->
-                <div v-else class="flex flex-column align-items-center gap-1 p-2">
-                  <div class="flex align-items-center gap-2">
-                    <i class="pi pi-file" style="font-size: 2rem"></i>
-                    <span v-if="mediaFilename" class="p-text-secondary" style="word-break: break-all">{{ mediaFilename }}</span>
-                  </div>
-                  <Button
-                      v-if="!mediaBlobUrl"
-                      icon="pi pi-download"
-                      size="small"
-                      outlined
-                      :loading="mediaLoading"
-                      :label="t('chat.message.download')"
-                      @click="downloadMedia"
-                  />
-                </div>
-              </div>
-              <!-- No thumbnail yet: show download button placeholder -->
-              <div v-else class="my-2 flex justify-content-center">
-                <Button
-                    icon="pi pi-download"
-                    size="small"
-                    outlined
-                    :loading="mediaLoading"
-                    :label="t('chat.message.download')"
-                    @click="downloadMedia"
-                />
-              </div>
-              <!-- 3. Caption -->
-              <p v-if="message.body" v-html="message.body.replace(/\n/g, '<br>')"></p>
-              <!-- 4. Save button -->
-              <div v-if="mediaBlobUrl" class="flex justify-content-center mt-1">
-                <Button
-                    icon="pi pi-save"
-                    size="small"
-                    text
-                    :label="t('chat.message.save')"
-                    @click="saveMedia"
-                />
-              </div>
-            </template>
-            <!-- Plain text (no media) -->
-            <template v-else-if="message.body">
-              <p v-html="message.body.replace(/\n/g, '<br>')"></p>
-            </template>
-          </div>
-          <!-- ack at the bottom of div-->
-          <div class="flex flex-column justify-content-end" style="height: 100%" v-if="message.fromMe">
-            <MessageAck :ack="message.ack" class="mt-1 ml-2"/>
-          </div>
+        <div v-if="parsed.forwarded && kind !== 'revoked'" class="forwarded">
+          <i class="pi pi-share-alt"></i>
+          {{ parsed.forwardedMany ? t('chat.message.forwardedMany') : t('chat.message.forwarded') }}
         </div>
 
-        <!-- Details Button + Datetime -->
-        <div class="flex align-items-center justify-content-end my-1">
-          <div
-              class="p-text-secondary"
-              style="font-size: 0.7rem"
+        <MessageQuote
+            v-if="parsed.quote && kind !== 'revoked'"
+            :quote="parsed.quote"
+            :sender="quoteSender"
+            :color="quoteColor"
+            clickable
+            class="mb-1"
+            @click="emit('jump', parsed.quote.key)"
+        />
+
+        <!-- Content -->
+        <div v-if="kind === 'revoked'" class="muted">
+          <i class="pi pi-ban"></i> {{ t('chat.message.deleted') }}
+        </div>
+        <div v-else-if="kind === 'pending'" class="muted">
+          <i class="pi pi-clock"></i> {{ t('chat.message.pending') }}
+        </div>
+        <div v-else-if="kind === 'unsupported'" class="muted">
+          <i class="pi pi-question-circle"></i> {{ t('chat.message.unsupported', {type: parsed.rawType || '?'}) }}
+        </div>
+        <template v-else>
+          <MessageVisualMedia
+              v-if="isVisual"
+              :kind="kind"
+              :media="parsed.media"
+              :message="message"
+              :serverId="serverId"
+              :sessionName="sessionName"
+          />
+          <MessageAudio
+              v-else-if="isAudio"
+              :kind="kind"
+              :media="parsed.media"
+              :message="message"
+              :serverId="serverId"
+              :sessionName="sessionName"
+          />
+          <MessageDocument
+              v-else-if="kind === 'document'"
+              :media="parsed.media"
+              :message="message"
+              :serverId="serverId"
+              :sessionName="sessionName"
+          />
+          <MessageStructured v-else-if="isStructured" :parsed="parsed"/>
+
+          <a
+              v-if="linkPreview"
+              class="link-preview"
+              :href="linkPreview.href"
+              target="_blank"
+              rel="noopener noreferrer"
           >
-            {{ date }}
-          </div>
-          <div class="ml-2">
-            <a
-                href="#"
-                @click.prevent="view">
-              <i
-                  class="pi"
-                  :class="showDetails? 'pi-code' : 'pi-code'"
-              > </i>
-            </a>
-          </div>
-        </div>
+            <img v-if="linkPreview.thumbnail" :src="linkPreview.thumbnail" alt="" class="link-thumb"/>
+            <div class="link-info">
+              <div v-if="linkPreview.title" class="link-title" dir="auto">{{ linkPreview.title }}</div>
+              <div v-if="linkPreview.description" class="link-description" dir="auto">{{ linkPreview.description }}</div>
+              <div class="link-domain">{{ linkPreview.domain }}</div>
+            </div>
+          </a>
 
-        <!-- Details -->
-        <div v-if="showDetails" class="my-2">
-          <hr/>
-          <JsonDataViewer :data="message"></JsonDataViewer>
+          <MessageText
+              v-if="displayText"
+              :text="displayText"
+              :allowJumbo="jumbo"
+              :mentions="mentions"
+              :spacer="spacer"
+              :class="{ 'mt-1': kind !== 'text' }"
+          />
+        </template>
+
+        <!-- Time, edited, ack -->
+        <div class="meta" :class="`meta-${metaMode}`">
+          <span v-if="edited" class="edited">{{ t('chat.message.edited') }}</span>
+          <span v-tooltip.top="fullDate">{{ time }}</span>
+          <MessageAck v-if="fromMe" :ack="message.ack" class="ack"/>
         </div>
       </div>
-    </Chip>
-  </div>
 
+      <div v-if="item.reactions.length" class="reactions">
+        <span
+            v-for="reaction in item.reactions"
+            :key="reaction.emoji"
+            class="reaction"
+            :class="{ mine: reaction.mine }"
+            v-tooltip.top="reaction.senders.map((sender) => sender === 'me' ? t('chat.message.you') : (nameOf?.(sender) || formatJid(sender))).join(', ')"
+        >
+          {{ reaction.emoji }}<span v-if="reaction.count > 1" class="reaction-count">{{ reaction.count }}</span>
+        </span>
+      </div>
+    </template>
+  </div>
 </template>
 
-
 <style scoped lang="scss">
-.chip-70 {
-  max-width: 70%;
+.msg-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0 1.25rem;
+  margin-top: 0.5rem;
+
+  &.grouped {
+    margin-top: 0.15rem;
+  }
+
+  &.out {
+    align-items: flex-end;
+  }
+
+  &.center {
+    align-items: center;
+    margin: 0.6rem 0;
+  }
+
+  &.highlighted .bubble {
+    animation: highlight 1.6s ease-out;
+  }
 }
 
-.chip-100 {
-  max-width: 100%;
+@keyframes highlight {
+  0%, 40% {
+    box-shadow: 0 0 0 3px var(--primary-color);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
-.media-overlay-wrapper {
+.bubble {
+  --bubble-bg: var(--surface-card);
+  --bubble-border: var(--surface-border);
   position: relative;
-  width: 240px;
-  line-height: 0;
+  max-width: min(75%, 520px);
+  min-width: 5.5rem;
+  padding: 0.35rem 0.55rem 0.3rem;
+  border-radius: 10px;
+  background: var(--bubble-bg);
+  color: var(--text-color);
+  box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13), 0 0 0 1px var(--bubble-border);
+  overflow-wrap: anywhere;
+
+  // Incoming: neutral card. Outgoing: tinted with the theme primary color (works for every theme, light or dark)
+  .out & {
+    --bubble-bg: var(--highlight-bg);
+    --bubble-bg: color-mix(in srgb, var(--primary-color) 26%, var(--surface-card));
+    --bubble-border: color-mix(in srgb, var(--primary-color) 30%, transparent);
+  }
+
+  // Tail on the first message of a group, like WhatsApp
+  &.first::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 9px;
+    height: 13px;
+    background: var(--bubble-bg);
+  }
+
+  .in &.first {
+    border-start-start-radius: 0;
+
+    &::before {
+      inset-inline-start: -8px;
+      clip-path: polygon(0 0, 100% 0, 100% 100%);
+    }
+  }
+
+  .out &.first {
+    border-start-end-radius: 0;
+
+    &::before {
+      inset-inline-end: -8px;
+      clip-path: polygon(0 0, 100% 0, 0 100%);
+    }
+  }
+
+  [dir='rtl'] .in &.first::before {
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+
+  [dir='rtl'] .out &.first::before {
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+  }
+
+  &.sticker::before {
+    display: none;
+  }
+
+  &.visual {
+    padding: 0.2rem 0.2rem 0.25rem;
+
+    .sender, .forwarded, .quote, :deep(.message-text) {
+      margin-inline: 0.35rem;
+    }
+  }
+
+  &.sticker {
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  &:hover .menu-trigger {
+    opacity: 1;
+  }
 }
 
-.media-overlay {
+.menu-trigger {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: 2px;
+  inset-inline-end: 2px;
+  z-index: 2;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  border-radius: 50%;
+  background: var(--bubble-bg);
+  color: var(--text-color-secondary);
+  box-shadow: 0 0 6px 4px var(--bubble-bg);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+
+  &:focus-visible {
+    opacity: 1;
+  }
+}
+
+.sender {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 0.4rem;
+  margin-bottom: 0.15rem;
+  padding-inline-end: 1.2rem;
+  font-size: 0.8rem;
+}
+
+.sender-name {
+  font-weight: 600;
+}
+
+.sender-phone, .sender-tag {
+  color: var(--text-color-secondary);
+  font-size: 0.75rem;
+}
+
+.forwarded {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 6px;
-  cursor: pointer;
-  box-sizing: border-box;
+  gap: 0.3rem;
+  margin-bottom: 0.15rem;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--text-color-secondary);
+
+  i {
+    font-size: 0.7rem;
+  }
 }
 
-.media-preview-image {
-  width: 240px;
-  height: auto;
-  display: block;
-  margin: 0;
-  border-radius: 6px;
+.muted {
+  padding-inline-end: 4.5rem;
+  font-style: italic;
+  color: var(--text-color-secondary);
+
+  i {
+    font-size: 0.85rem;
+    margin-inline-end: 0.2rem;
+  }
 }
 
-.media-preview-video {
-  width: 240px;
-  height: auto;
-  display: block;
-  margin: 0;
+.link-preview {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.3rem;
   border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-ground);
+  color: inherit;
+  text-decoration: none;
+  max-width: 360px;
 }
 
-.media-preview-audio {
-  max-width: 100%;
-  display: block;
+.link-thumb {
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+}
+
+.link-info {
+  padding: 0.4rem 0.55rem;
+  line-height: 1.35;
+}
+
+.link-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.link-description {
+  font-size: 0.78rem;
+  color: var(--text-color-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.link-domain {
+  font-size: 0.72rem;
+  color: var(--text-color-secondary);
+  margin-top: 0.1rem;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  line-height: 1;
+  color: var(--text-color-secondary);
+  white-space: nowrap;
+
+  &.meta-inline {
+    position: absolute;
+    bottom: 0.35rem;
+    inset-inline-end: 0.55rem;
+  }
+
+  &.meta-block {
+    margin-top: 0.2rem;
+  }
+
+  &.meta-overlay {
+    position: absolute;
+    bottom: 0.55rem;
+    inset-inline-end: 0.55rem;
+    z-index: 1;
+    padding: 0.2rem 0.4rem;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.5);
+    color: #fff;
+    pointer-events: none;
+  }
+
+  .sticker &.meta-overlay {
+    bottom: 0.2rem;
+  }
+
+  .ack {
+    font-size: 0.75rem;
+  }
+
+  :deep(.pi) {
+    font-size: 0.75rem;
+  }
+}
+
+.edited {
+  font-style: italic;
+}
+
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: -0.35rem;
+  padding: 0 0.4rem;
+  position: relative;
+  z-index: 1;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 12px;
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  font-size: 0.85rem;
+  cursor: default;
+
+  &.mine {
+    border-color: var(--primary-color);
+  }
+}
+
+.reaction-count {
+  font-size: 0.7rem;
+  color: var(--text-color-secondary);
+}
+
+.notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 85%;
+  padding: 0.3rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-card);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+  color: var(--text-color-secondary);
+  font-size: 0.8rem;
+  text-align: center;
+
+  &.missed i {
+    color: var(--red-500, #ef4444);
+  }
+}
+
+.notice-time {
+  font-size: 0.68rem;
+  opacity: 0.8;
 }
 </style>

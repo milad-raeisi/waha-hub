@@ -331,11 +331,12 @@ export class WahaAPI {
         });
     }
 
-    sendText(serverId: ServerId, sessionName: string, chatId: string, text: string): Promise<any> {
+    sendText(serverId: ServerId, sessionName: string, chatId: string, text: string, replyTo?: string): Promise<any> {
         const body = {
             session: sessionName,
             chatId: chatId,
             text: text,
+            reply_to: replyTo || undefined,
         }
         return this.api.call(serverId, {
             method: 'POST',
@@ -345,39 +346,39 @@ export class WahaAPI {
         })
     }
 
-    sendImage(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string): Promise<any> {
+    sendImage(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string, replyTo?: string): Promise<any> {
         return this.api.call(serverId, {
             method: 'POST',
             uri: '/api/sendImage',
             params: {},
-            body: { session: sessionName, chatId: chatId, file: file, caption: caption },
+            body: { session: sessionName, chatId: chatId, file: file, caption: caption, reply_to: replyTo || undefined },
         })
     }
 
-    sendVideo(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string): Promise<any> {
+    sendVideo(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string, replyTo?: string): Promise<any> {
         return this.api.call(serverId, {
             method: 'POST',
             uri: '/api/sendVideo',
             params: {},
-            body: { session: sessionName, chatId: chatId, file: file, caption: caption, convert: true },
+            body: { session: sessionName, chatId: chatId, file: file, caption: caption, convert: true, reply_to: replyTo || undefined },
         })
     }
 
-    sendVoice(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile): Promise<any> {
+    sendVoice(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, replyTo?: string): Promise<any> {
         return this.api.call(serverId, {
             method: 'POST',
             uri: '/api/sendVoice',
             params: {},
-            body: { session: sessionName, chatId: chatId, file: file, convert: true },
+            body: { session: sessionName, chatId: chatId, file: file, convert: true, reply_to: replyTo || undefined },
         })
     }
 
-    sendFile(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string): Promise<any> {
+    sendFile(serverId: ServerId, sessionName: string, chatId: string, file: MediaFile, caption?: string, replyTo?: string): Promise<any> {
         return this.api.call(serverId, {
             method: 'POST',
             uri: '/api/sendFile',
             params: {},
-            body: { session: sessionName, chatId: chatId, file: file, caption: caption },
+            body: { session: sessionName, chatId: chatId, file: file, caption: caption, reply_to: replyTo || undefined },
         })
     }
 

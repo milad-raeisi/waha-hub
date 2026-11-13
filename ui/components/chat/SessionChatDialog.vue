@@ -10,8 +10,23 @@ import {ClientStatus, WebSocketClient} from "../../services/WebSocketService";
 import {ref} from "vue";
 import WebSocketStatus from "../events/WebSocketStatus.vue";
 import {useI18n} from "vue-i18n";
+import {releaseChatMedia} from "../../composables/chat/useChatMedia";
+import {
+  autoDownloadMedia,
+  hiddenReading,
+  setAutoDownloadMedia,
+  setHiddenReading,
+} from "../../composables/chat/useChatSettings";
+import {timestampMs} from "../../utils/chat/timeline";
+import {formatJid, senderColor} from "../../utils/chat/format";
 
-const {t} = useI18n();
+const {t, locale} = useI18n();
+
+// Persian and Arabic: right-to-left chat, like WhatsApp in these languages
+const RTL_LOCALES = ['fa', 'ar']
+const dir = computed(() => RTL_LOCALES.includes(locale.value) ? 'rtl' : 'ltr')
+// The splitter itself stays LTR (its drag math is LTR-only) - the panels are swapped instead
+const panels = computed(() => dir.value === 'rtl' ? ['chat', 'list'] : ['list', 'chat'])
 
 const visible = defineModel("visible");
 const session = defineModel("session");
@@ -64,6 +79,7 @@ async function loadMoreChats() {
 
 const selectedChat = ref(null)
 const messages = ref([])
+const replyTo = ref(null)
 
 const isGroupChat = computed(() => !!selectedChat.value?.id?.endsWith('@g.us'))
 const participantTags = ref(null)
@@ -134,11 +150,14 @@ async function saveMyTag(tag) {
 }
 
 const profilePicture = ref(null)
-watch(selectedChat, () => {
-  if (!selectedChat.value) {
+watch(selectedChat, (chat, previous) => {
+  if (!chat || chat.id === previous?.id) {
     return
   }
   participantTags.value = null
+  myTag.value = null
+  replyTo.value = null
+  messages.value = []
   fetchMessages()
 })
 const fetchingMessages = ref(false)
@@ -150,10 +169,18 @@ const offset = ref(0)
 let client = null
 const clientStatus = ref(ClientStatus.DISCONNECTED)
 
+const LISTEN_EVENTS = [
+  'message.any',
+  'message.ack',
+  'message.reaction',
+  'message.revoked',
+  'message.edited',
+  'group.v2.participants.tag',
+]
+
 function startClient() {
   const server = store.getServer(session.value.server.id)
-  const listenEvents = ['message.any', 'group.v2.participants.tag']
-  client = new WebSocketClient(server, listenEvents, session.value.name)
+  client = new WebSocketClient(server, LISTEN_EVENTS, session.value.name)
   client.connect()
   clientStatus.value = ClientStatus.CONNECTING
   client.on("open", () => {
@@ -202,6 +229,59 @@ async function resolveChatAlias(chatId) {
   return alias
 }
 
+// Chats an event belongs to (revoked / edited events wrap the message)
+function eventChatIds(payload) {
+  const ids = new Set()
+  for (const value of [payload, payload?.after, payload?.before]) {
+    if (value?.from) ids.add(value.from)
+    if (value?.to) ids.add(value.to)
+  }
+  return ids
+}
+
+async function eventMatchesOpenedChat(payload) {
+  const chatId = selectedChat.value?.id
+  if (!chatId) {
+    return false
+  }
+  const ids = eventChatIds(payload)
+  if (ids.has(chatId)) {
+    return true
+  }
+  // The overview merges @lid and @c.us chats of the same contact, so the opened
+  // chat may be "447@c.us" while the event arrives from "265@lid" (or vice versa).
+  const alias = await resolveChatAlias(chatId)
+  // The user may have switched chats while we were resolving
+  return !!alias && selectedChat.value?.id === chatId && ids.has(alias)
+}
+
+function updateAck(payload) {
+  const id = payload?.id
+  if (!id || payload.ack === undefined) {
+    return false
+  }
+  const message = messages.value.find((item) => item.id === id)
+  if (!message) {
+    return false
+  }
+  if ((message.ack ?? -2) < payload.ack) {
+    message.ack = payload.ack
+    message.ackName = payload.ackName
+  }
+  return true
+}
+
+let refreshTimer = null
+
+// Many events arrive in bursts (message + ack + reaction) - refetch once
+function scheduleRefresh(delay = 1000) {
+  clearTimeout(refreshTimer)
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null
+    refreshLatestMessages()
+  }, delay)
+}
+
 async function handleEvent(event) {
   if (event.event === 'group.v2.participants.tag') {
     if (event.payload?.group?.id === selectedChat.value?.id) {
@@ -210,30 +290,16 @@ async function handleEvent(event) {
     }
     return
   }
-  await sleep(1000)
-  refreshChats()
-  const chatId = selectedChat.value?.id
-  if (!chatId) {
-    return
+  if (event.event === 'message.ack') {
+    if (updateAck(event.payload)) {
+      return
+    }
   }
-  const from = event.payload?.from
-  const to = event.payload?.to
-  if (from === chatId || to === chatId) {
-    fetchMessages()
-    return
+  if (event.event === 'message.any') {
+    sleep(1000).then(refreshChats)
   }
-  // The overview merges @lid and @c.us chats of the same contact, so the opened
-  // chat may be "447@c.us" while the event arrives from "265@lid" (or vice versa).
-  const alias = await resolveChatAlias(chatId)
-  if (!alias) {
-    return
-  }
-  // The user may have switched chats while we were resolving
-  if (selectedChat.value?.id !== chatId) {
-    return
-  }
-  if (from === alias || to === alias) {
-    fetchMessages()
+  if (await eventMatchesOpenedChat(event.payload)) {
+    scheduleRefresh()
   }
 }
 
@@ -246,49 +312,96 @@ function stopClient() {
   clientStatus.value = ClientStatus.DISCONNECTED
 }
 
+function sortByTimestamp(list) {
+  return [...list].sort((a, b) => timestampMs(a.timestamp) - timestampMs(b.timestamp))
+}
 
-function fetchMessages() {
-  offset.value = 0
-  hasEarlierMessages.value = true
-  fetchingMessages.value = true
-  store.getChatsMessages(
+function getMessagesPage(chatId, pageOffset) {
+  return store.getChatsMessages(
       session.value.server.id,
       session.value.name,
-      selectedChat.value.id,
+      chatId,
       limit.value,
-      0,
+      pageOffset,
       false,
       mergeOverview.value,
-  ).then((data) => {
-    messages.value = data.reverse()
-    fetchParticipantTags()
-  }).finally(() => {
-        fetchingMessages.value = false
-      }
   )
 }
 
+// First page of a chat - replaces everything
+async function fetchMessages() {
+  const chatId = selectedChat.value?.id
+  if (!chatId) return
+  offset.value = 0
+  hasEarlierMessages.value = true
+  fetchingMessages.value = true
+  try {
+    const data = await getMessagesPage(chatId, 0)
+    if (selectedChat.value?.id !== chatId) return
+    messages.value = sortByTimestamp(data || [])
+    hasEarlierMessages.value = (data || []).length >= limit.value
+    fetchParticipantTags()
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: t('chat.loadFailedTitle'),
+      detail: e?.response?.data?.message || e?.message || String(e),
+      life: 5000,
+    })
+  } finally {
+    if (selectedChat.value?.id === chatId) {
+      fetchingMessages.value = false
+    }
+  }
+}
+
+// Newest page merged into what is loaded - keeps the history the user scrolled through
+async function refreshLatestMessages() {
+  const chatId = selectedChat.value?.id
+  if (!chatId) return
+  try {
+    const data = await getMessagesPage(chatId, 0)
+    if (selectedChat.value?.id !== chatId || !data) return
+    const byId = new Map(messages.value.map((message) => [message.id, message]))
+    let added = 0
+    for (const message of data) {
+      if (!byId.has(message.id)) added++
+      byId.set(message.id, message)
+    }
+    // New messages shift the pages - keep "load earlier" from returning duplicates
+    offset.value += added
+    messages.value = sortByTimestamp([...byId.values()])
+    fetchParticipantTags()
+  } catch (e) {
+    console.warn('Failed to refresh messages', e)
+  }
+}
+
 async function loadEarlyMessages() {
-  if (loadingEarly.value) return
+  if (loadingEarly.value || !selectedChat.value) return
+  const chatId = selectedChat.value.id
   loadingEarly.value = true
   try {
     const nextOffset = offset.value + limit.value
-    const data = await store.getChatsMessages(
-        session.value.server.id,
-        session.value.name,
-        selectedChat.value.id,
-        limit.value,
-        nextOffset,
-        false,
-        mergeOverview.value,
-    )
-    if (data.length > 0) {
+    const data = await getMessagesPage(chatId, nextOffset)
+    if (selectedChat.value?.id !== chatId) return
+    if (data && data.length > 0) {
       offset.value = nextOffset
-      messages.value = [...data.reverse(), ...messages.value]
+      const known = new Set(messages.value.map((message) => message.id))
+      const older = data.filter((message) => !known.has(message.id))
+      messages.value = sortByTimestamp([...older, ...messages.value])
+      hasEarlierMessages.value = data.length >= limit.value
       fetchParticipantTags()
     } else {
       hasEarlierMessages.value = false
     }
+  } catch (e) {
+    toast.add({
+      severity: 'error',
+      summary: t('chat.loadFailedTitle'),
+      detail: e?.response?.data?.message || e?.message || String(e),
+      life: 5000,
+    })
   } finally {
     loadingEarly.value = false
   }
@@ -324,7 +437,10 @@ watch(
       if (!isVisible) {
         selectedChat.value = null
         messages.value = []
+        replyTo.value = null
+        clearTimeout(refreshTimer)
         stopClient()
+        releaseChatMedia(serverId || previousServerId, sessionName || previousSessionName)
         return
       }
 
@@ -332,73 +448,136 @@ watch(
       const sessionChangedWhileOpen =
           wasVisible && isVisible && (serverId !== previousServerId || sessionName !== previousSessionName)
 
+      if (sessionChangedWhileOpen) {
+        selectedChat.value = null
+        messages.value = []
+        releaseChatMedia(previousServerId, previousSessionName)
+      }
       if (becameVisible || sessionChangedWhileOpen) {
         initializeDialog()
       }
     }
 )
 
+onBeforeUnmount(() => {
+  clearTimeout(refreshTimer)
+  stopClient()
+})
+
 function clickOnChat(chat) {
   selectedChat.value = chat
 }
 
-async function sendMedia(type, file, base64, caption) {
+//
+// Sending
+//
+function sendErrorToast(e) {
+  toast.add({
+    severity: 'error',
+    summary: t('chat.sendFailedTitle'),
+    detail: e?.response?.data?.message || e?.message || String(e),
+    life: 5000,
+  })
+}
+
+async function sendMedia(type, file, base64, caption, replyToId) {
   if (!selectedChat.value) return
-  const mediaFile = { data: base64, mimetype: file.type, filename: file.name }
+  const serverId = session.value.server.id
+  const sessionName = session.value.name
+  const chatId = selectedChat.value.id
+  const mediaFile = {data: base64, mimetype: file.type || 'application/octet-stream', filename: file.name}
   try {
     if (type === 'image') {
-      await store.sendImage(session.value.server.id, session.value.name, selectedChat.value.id, mediaFile, caption)
+      await store.sendImage(serverId, sessionName, chatId, mediaFile, caption, replyToId)
     } else if (type === 'video') {
-      await store.sendVideo(session.value.server.id, session.value.name, selectedChat.value.id, mediaFile, caption)
+      await store.sendVideo(serverId, sessionName, chatId, mediaFile, caption, replyToId)
     } else if (type === 'audio') {
-      await store.sendVoice(session.value.server.id, session.value.name, selectedChat.value.id, mediaFile)
+      await store.sendVoice(serverId, sessionName, chatId, mediaFile, replyToId)
     } else {
-      await store.sendFile(session.value.server.id, session.value.name, selectedChat.value.id, mediaFile, caption)
+      await store.sendFile(serverId, sessionName, chatId, mediaFile, caption, replyToId)
     }
-    await sleep(1000)
-    fetchMessages()
+    scheduleRefresh()
   } catch (e) {
-    toast.add({
-      severity: 'error',
-      summary: t('chat.sendFailedTitle'),
-      detail: e?.message || String(e),
-      life: 5000,
-    })
+    sendErrorToast(e)
     throw e
   }
 }
 
-async function sendText(text) {
+async function sendText(text, replyToId) {
   if (!selectedChat.value) {
     return
   }
-  try {
-    await store.readChatMessages(
-        session.value.server.id,
-        session.value.name,
-        selectedChat.value.id,
-    )
-  } catch (e) {
-    console.warn('Failed to mark chat as read before sending text', e)
-    toast.add({
-      severity: 'warn',
-      summary: t('chat.readFailedTitle'),
-      detail: t('chat.readFailedDescription'),
-      life: 4000,
-    })
+  // Hidden reading: never send read receipts (blue ticks) to the contact
+  if (!hiddenReading.value) {
+    try {
+      await store.readChatMessages(
+          session.value.server.id,
+          session.value.name,
+          selectedChat.value.id,
+      )
+    } catch (e) {
+      console.warn('Failed to mark chat as read before sending text', e)
+      toast.add({
+        severity: 'warn',
+        summary: t('chat.readFailedTitle'),
+        detail: t('chat.readFailedDescription'),
+        life: 4000,
+      })
+    }
   }
   try {
-    await store.sendText(session.value.server.id, session.value.name, selectedChat.value.id, text)
-    await sleep(1000)
-    fetchMessages()
+    await store.sendText(session.value.server.id, session.value.name, selectedChat.value.id, text, replyToId)
+    scheduleRefresh()
   } catch (e) {
-    toast.add({
-      severity: 'error',
-      summary: t('chat.sendFailedTitle'),
-      detail: e?.message || String(e),
-      life: 5000,
-    })
+    sendErrorToast(e)
     throw e
+  }
+}
+
+//
+// Reply
+//
+function startReply(item) {
+  replyTo.value = item
+}
+
+const replySender = computed(() => {
+  const message = replyTo.value?.message
+  if (!message) return ''
+  if (message.fromMe) return t('chat.message.you')
+  return replyTo.value.parsed.senderName || formatJid(message.participant || message.from)
+})
+const replyColor = computed(() => senderColor(replyTo.value?.senderId))
+
+//
+// Drag & drop files into the chat
+//
+const footer = ref(null)
+const dragging = ref(false)
+let dragDepth = 0
+
+function hasFiles(event) {
+  return [...(event.dataTransfer?.types || [])].includes('Files')
+}
+
+function onDragEnter(event) {
+  if (!hasFiles(event) || !selectedChat.value) return
+  dragDepth++
+  dragging.value = true
+}
+
+function onDragLeave(event) {
+  if (!hasFiles(event)) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) dragging.value = false
+}
+
+function onDrop(event) {
+  dragDepth = 0
+  dragging.value = false
+  const files = [...(event.dataTransfer?.files || [])]
+  if (files.length && selectedChat.value) {
+    footer.value?.addFiles(files)
   }
 }
 
@@ -411,6 +590,7 @@ const showPromo = ref(false)
       :modal="true"
       maximizable
       style="width: 90%; height: 90%;"
+      :contentStyle="{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }"
   >
     <template #header>
       <div>
@@ -420,7 +600,8 @@ const showPromo = ref(false)
         ></SessionHeader>
       </div>
     </template>
-    <div class="pb-3 flex">
+    <div class="chat-ui chat-root" :dir="dir">
+    <div class="pb-3 flex align-items-center flex-wrap gap-3">
       <div class="flex align-items-center gap-1">
         <SessionChip
             v-if="session.me"
@@ -430,9 +611,9 @@ const showPromo = ref(false)
         </SessionChip>
         <WebSocketStatus :status="clientStatus"></WebSocketStatus>
       </div>
-      <div class="m-auto pb-2">
+      <div class="m-auto">
         <div class="text-center">
-          <a href="#" @click="showPromo = true">
+          <a href="#" @click.prevent="showPromo = true">
             <b>{{ t('chat.aboutChatUI') }}</b>
           </a>
         </div>
@@ -442,10 +623,22 @@ const showPromo = ref(false)
             @close="showPromo = false"
         ></ChatPromo>
       </div>
+      <div class="flex align-items-center gap-2" v-tooltip.bottom="t('chat.hiddenReadingTooltip')">
+        <i class="pi pi-eye-slash text-sm" :class="{ 'text-primary': hiddenReading }"></i>
+        <span class="text-sm font-medium">{{ t('chat.hiddenReading') }}</span>
+        <InputSwitch :modelValue="hiddenReading" @update:modelValue="setHiddenReading"/>
+      </div>
+      <div class="flex align-items-center gap-2" v-tooltip.bottom="t('chat.autoDownloadMediaTooltip')">
+        <i class="pi pi-download text-sm"></i>
+        <span class="text-sm font-medium">{{ t('chat.autoDownloadMedia') }}</span>
+        <InputSwitch :modelValue="autoDownloadMedia" @update:modelValue="setAutoDownloadMedia"/>
+      </div>
     </div>
 
-    <Splitter style="max-height: 90%">
-      <SplitterPanel :size=30 class="flex items-center justify-center">
+    <Splitter class="chat-splitter" dir="ltr">
+      <template v-for="panel in panels" :key="panel">
+      <SplitterPanel v-if="panel === 'list'" :size=30 class="flex items-center justify-center chat-list-panel">
+        <div class="chat-list-inner" :dir="dir">
         <ChatList
             :chats="chats"
             :pending="pending"
@@ -454,36 +647,52 @@ const showPromo = ref(false)
             :merge="mergeOverview"
             :loadMoreChats="loadMoreChats"
             :loadingMoreChats="loadingMoreChats"
+            :selectedChatId="selectedChat?.id"
             @click-on-chat="clickOnChat"
             @refresh-chats="refreshChats"
             @update:merge="onMergeToggle"
         ></ChatList>
+        </div>
       </SplitterPanel>
-      <SplitterPanel :size=70 class="flex flex-column gap-2 justify-content-between p-2">
-        <div class="flex flex-column justify-content-between" style="height: 100%">
+      <SplitterPanel v-else :size=70 class="chat-panel">
+        <div
+            class="chat-panel-inner"
+            :dir="dir"
+            @dragenter.prevent="onDragEnter"
+            @dragover.prevent
+            @dragleave="onDragLeave"
+            @drop.prevent="onDrop"
+        >
           <template v-if="selectedChat">
-            <ChatHeader
-                :chat="selectedChat"
-                :serverId="session.server.id"
-                :sessionName="session.name"
-                :me="session.me"
-                :mePicture="profilePicture"
-                :fetch="fetchMessages"
-                :fetching="fetchingMessages"
-            >
-            </ChatHeader>
-            <hr>
+            <div class="chat-panel-header">
+              <ChatHeader
+                  :chat="selectedChat"
+                  :serverId="session.server.id"
+                  :sessionName="session.name"
+                  :me="session.me"
+                  :mePicture="profilePicture"
+                  :fetch="fetchMessages"
+                  :fetching="fetchingMessages"
+              >
+              </ChatHeader>
+            </div>
 
             <ChatMessages
                 :messages="messages"
+                :chatId="selectedChat.id"
+                :loading="fetchingMessages"
                 :loadEarlier="loadEarlyMessages"
                 :loadingEarlier="loadingEarly"
                 :hasEarlierMessages="hasEarlierMessages"
                 :serverId="session.server.id"
                 :sessionName="session.name"
+                :isGroup="isGroupChat"
+                :meId="session.me?.id"
                 :participantTags="participantTags"
                 :myTag="myTag"
                 :editMyTag="isGroupChat ? editMyTag : undefined"
+                class="chat-messages-area"
+                @reply="startReply"
             ></ChatMessages>
             <GroupMemberTagDialog
                 v-model:visible="showMyTagDialog"
@@ -493,18 +702,117 @@ const showPromo = ref(false)
             />
 
             <ChatInputFooter
-                :disabled="!selectedChat || fetchingMessages"
+                ref="footer"
+                :key="selectedChat.id"
+                :disabled="!selectedChat || (fetchingMessages && !messages.length)"
                 :sendText="sendText"
                 :sendMedia="sendMedia"
+                :replyTo="replyTo"
+                :replySender="replySender"
+                :replyColor="replyColor"
+                @cancel-reply="replyTo = null"
             />
+
+            <div v-if="dragging" class="drop-overlay">
+              <i class="pi pi-upload"></i>
+              <span>{{ t('chat.dropFiles') }}</span>
+            </div>
           </template>
+          <div v-else class="no-chat">
+            <i class="pi pi-comments"></i>
+            <span>{{ t('chat.selectChat') }}</span>
+          </div>
         </div>
       </SplitterPanel>
+      </template>
     </Splitter>
+    </div>
   </Dialog>
 
 </template>
 
 <style scoped lang="scss">
+.chat-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 
+.chat-splitter {
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-list-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-list-inner {
+  width: 100%;
+  height: 100%;
+}
+
+.chat-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-panel-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-ground);
+}
+
+.chat-panel-header {
+  padding: 0 0.75rem;
+  border-bottom: 1px solid var(--surface-border);
+  background: var(--surface-card);
+}
+
+.chat-messages-area {
+  flex: 1;
+  min-height: 0;
+}
+
+.drop-overlay {
+  position: absolute;
+  inset: 0.5rem;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  border: 2px dashed var(--primary-color);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-ground) 85%, transparent);
+  color: var(--primary-color);
+  font-size: 1.1rem;
+  font-weight: 600;
+  pointer-events: none;
+
+  i {
+    font-size: 2.5rem;
+  }
+}
+
+.no-chat {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-color-secondary);
+
+  i {
+    font-size: 3rem;
+    opacity: 0.6;
+  }
+}
 </style>
