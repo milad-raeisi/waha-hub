@@ -10,8 +10,13 @@ const props = defineProps({
       loadingMoreChats: Boolean,
       serverId: String,
       sessionName: String,
+      selectedChatId: String,
     }
 )
+
+function rowClass(data) {
+  return data.id === props.selectedChatId ? 'chat-row-selected' : undefined
+}
 const emit = defineEmits(['clickOnChat',
   'refreshChats',
   'update:merge'
@@ -26,6 +31,7 @@ const emit = defineEmits(['clickOnChat',
         :loading="pending"
         style="width: 100%"
         class="p-datatable--clickable"
+        :rowClass="rowClass"
         @row-click="emit('clickOnChat', $event.data)"
         :rowHover="true"
     >
@@ -80,5 +86,12 @@ const emit = defineEmits(['clickOnChat',
 </template>
 
 <style scoped lang="scss">
+:deep(.chat-row-selected) {
+  background: var(--highlight-bg) !important;
+  box-shadow: inset 3px 0 0 var(--primary-color);
+}
 
+[dir='rtl'] :deep(.chat-row-selected) {
+  box-shadow: inset -3px 0 0 var(--primary-color);
+}
 </style>
