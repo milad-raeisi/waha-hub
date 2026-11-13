@@ -815,6 +815,7 @@
   "contacts.role.left": "יצא/ה",
   "contacts.openChat": "פתיחת הצ'אט",
   "contacts.copyNumber": "העתקת המספר",
+  "contacts.viewPhoto": "הצגת התמונה",
   "contacts.copyNumbers": "העתקת מספרי הטלפון",
   "contacts.copied": "הועתק ללוח ({count})",
   "contacts.exportCsv": "ייצוא CSV ({count})",

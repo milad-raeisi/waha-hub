@@ -5,9 +5,12 @@
 import {useI18n} from "vue-i18n";
 import {useToast} from "primevue/usetoast";
 import MessageText from "./MessageText.vue";
+import ContactAvatar from "../ContactAvatar.vue";
 
 const props = defineProps({
   parsed: Object,
+  serverId: String,
+  sessionName: String,
 })
 const {t, locale} = useI18n()
 const toast = useToast()
@@ -23,11 +26,6 @@ const mapUrl = computed(() => {
 const coordinates = computed(() => hasCoordinates.value
     ? `${location.value.latitude.toFixed(5)}, ${location.value.longitude.toFixed(5)}`
     : '')
-
-function initials(name) {
-  const parts = String(name || '?').trim().split(/\s+/).filter(Boolean)
-  return parts.slice(0, 2).map((part) => [...part][0]).join('').toUpperCase() || '?'
-}
 
 async function copy(text) {
   try {
@@ -76,7 +74,13 @@ const eventDate = computed(() => {
   <!-- Contacts -->
   <div v-else-if="parsed.kind === 'contacts'" class="contacts">
     <div v-for="(contact, index) in parsed.contacts" :key="index" class="contact">
-      <Avatar :label="initials(contact.name)" shape="circle" class="contact-avatar"/>
+      <ContactAvatar
+          :serverId="serverId"
+          :sessionName="sessionName"
+          :id="contact.phones.find((phone) => phone.waid)?.waid ? `${contact.phones.find((phone) => phone.waid).waid}@c.us` : undefined"
+          :name="contact.name"
+          size="2.5rem"
+      />
       <div class="contact-info">
         <div class="font-medium" dir="auto">{{ contact.name }}</div>
         <div v-if="contact.org" class="secondary" dir="auto">{{ contact.org }}</div>
@@ -219,12 +223,6 @@ const eventDate = computed(() => {
   padding: 0.5rem;
   border-radius: 8px;
   background: var(--surface-ground);
-}
-
-.contact-avatar {
-  flex-shrink: 0;
-  background: var(--primary-color);
-  color: var(--primary-color-text);
 }
 
 .contact-info {

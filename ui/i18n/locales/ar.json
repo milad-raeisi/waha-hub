@@ -815,6 +815,7 @@
   "contacts.role.left": "غادر",
   "contacts.openChat": "فتح المحادثة",
   "contacts.copyNumber": "نسخ الرقم",
+  "contacts.viewPhoto": "عرض الصورة",
   "contacts.copyNumbers": "نسخ أرقام الهواتف",
   "contacts.copied": "تم النسخ إلى الحافظة ({count})",
   "contacts.exportCsv": "تصدير CSV ({count})",

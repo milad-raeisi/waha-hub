@@ -815,6 +815,7 @@
   "contacts.role.left": "Keluar",
   "contacts.openChat": "Buka chat",
   "contacts.copyNumber": "Salin nomor",
+  "contacts.viewPhoto": "Lihat foto",
   "contacts.copyNumbers": "Salin nomor telepon",
   "contacts.copied": "Disalin ke clipboard ({count})",
   "contacts.exportCsv": "Ekspor CSV ({count})",

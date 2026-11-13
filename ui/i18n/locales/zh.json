@@ -815,6 +815,7 @@
   "contacts.role.left": "已退出",
   "contacts.openChat": "打开聊天",
   "contacts.copyNumber": "复制号码",
+  "contacts.viewPhoto": "查看照片",
   "contacts.copyNumbers": "复制电话号码",
   "contacts.copied": "已复制到剪贴板（{count}）",
   "contacts.exportCsv": "导出 CSV（{count}）",

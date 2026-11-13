@@ -815,6 +815,7 @@
   "contacts.role.left": "Ayrıldı",
   "contacts.openChat": "Sohbeti aç",
   "contacts.copyNumber": "Numarayı kopyala",
+  "contacts.viewPhoto": "Fotoğrafı görüntüle",
   "contacts.copyNumbers": "Telefon numaralarını kopyala",
   "contacts.copied": "Panoya kopyalandı ({count})",
   "contacts.exportCsv": "CSV dışa aktar ({count})",

@@ -815,6 +815,7 @@
   "contacts.role.left": "Вышел(а)",
   "contacts.openChat": "Открыть чат",
   "contacts.copyNumber": "Скопировать номер",
+  "contacts.viewPhoto": "Открыть фото",
   "contacts.copyNumbers": "Скопировать номера телефонов",
   "contacts.copied": "Скопировано в буфер обмена ({count})",
   "contacts.exportCsv": "Экспорт CSV ({count})",

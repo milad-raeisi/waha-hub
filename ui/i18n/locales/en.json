@@ -203,6 +203,7 @@
   "contacts.role.left": "Left",
   "contacts.openChat": "Open chat",
   "contacts.copyNumber": "Copy number",
+  "contacts.viewPhoto": "View photo",
   "contacts.copyNumbers": "Copy phone numbers",
   "contacts.copied": "Copied to clipboard ({count})",
   "contacts.exportCsv": "Export CSV ({count})",

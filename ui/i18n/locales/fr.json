@@ -815,6 +815,7 @@
   "contacts.role.left": "Parti",
   "contacts.openChat": "Ouvrir la discussion",
   "contacts.copyNumber": "Copier le numéro",
+  "contacts.viewPhoto": "Voir la photo",
   "contacts.copyNumbers": "Copier les numéros de téléphone",
   "contacts.copied": "Copié dans le presse-papiers ({count})",
   "contacts.exportCsv": "Exporter en CSV ({count})",

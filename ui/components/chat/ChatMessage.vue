@@ -227,7 +227,7 @@ function openMenu(event) {
               :serverId="serverId"
               :sessionName="sessionName"
           />
-          <MessageStructured v-else-if="isStructured" :parsed="parsed"/>
+          <MessageStructured v-else-if="isStructured" :parsed="parsed" :serverId="serverId" :sessionName="sessionName"/>
 
           <a
               v-if="linkPreview"

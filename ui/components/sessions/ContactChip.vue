@@ -24,11 +24,16 @@ const ids = computed(() => {
             :class="{ 'contact-chip__avatar--icon': !image }"
         >
           <template v-if="image">
-            <img
-                class="contact-chip__avatar-image"
-                :src="image"
-                :alt="name || id"
-            >
+            <!-- Click opens the profile picture full screen; doesn't trigger the row / chip click -->
+            <span class="contact-chip__avatar-preview" @click.stop>
+              <Image
+                  :src="image"
+                  :alt="name || id"
+                  preview
+                  class="contact-chip__avatar-preview"
+                  image-class="contact-chip__avatar-image"
+              />
+            </span>
           </template>
           <template v-else-if="id?.includes('@g.us')">
             <i class="contact-chip__avatar-icon contact-chip__avatar-icon--group pi pi-users"></i>
@@ -79,13 +84,25 @@ const ids = computed(() => {
   padding: 0.15rem;
 }
 
-.contact-chip__avatar-image {
+.contact-chip__avatar-preview {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  cursor: zoom-in;
+
+  :deep(.p-image-preview-indicator) {
+    border-radius: 50%;
+  }
+}
+
+.contact-chip__avatar :deep(.contact-chip__avatar-image) {
   width: calc(100% + 2px);
   height: calc(100% + 2px);
   object-fit: cover;
   display: block;
   margin: -1px;
-  border-radius: inherit;
+  border-radius: 50%;
 }
 
 .contact-chip__avatar-icon {

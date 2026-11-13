@@ -815,6 +815,7 @@
   "contacts.role.left": "ছেড়ে গেছেন",
   "contacts.openChat": "চ্যাট খুলুন",
   "contacts.copyNumber": "নম্বর কপি করুন",
+  "contacts.viewPhoto": "ছবি দেখুন",
   "contacts.copyNumbers": "ফোন নম্বরগুলো কপি করুন",
   "contacts.copied": "ক্লিপবোর্ডে কপি করা হয়েছে ({count})",
   "contacts.exportCsv": "CSV এক্সপোর্ট করুন ({count})",

@@ -12,6 +12,8 @@ import {ref} from "vue";
 import WebSocketStatus from "../events/WebSocketStatus.vue";
 import {useI18n} from "vue-i18n";
 import {releaseChatMedia} from "../../composables/chat/useChatMedia";
+import {releaseProfilePictures} from "../../composables/chat/useProfilePictures";
+import {useEscapeGuard} from "../../composables/chat/useEscapeGuard";
 import {
   autoDownloadMedia,
   hiddenReading,
@@ -22,6 +24,9 @@ import {timestampMs} from "../../utils/chat/timeline";
 import {formatJid, senderColor} from "../../utils/chat/format";
 
 const {t, locale} = useI18n();
+
+// Escape closes only the top-most layer (photo preview / nested dialog), not the whole chat
+useEscapeGuard()
 
 // Persian and Arabic: right-to-left chat, like WhatsApp in these languages
 const RTL_LOCALES = ['fa', 'ar']
@@ -442,6 +447,7 @@ watch(
         clearTimeout(refreshTimer)
         stopClient()
         releaseChatMedia(serverId || previousServerId, sessionName || previousSessionName)
+        releaseProfilePictures(serverId || previousServerId, sessionName || previousSessionName)
         return
       }
 

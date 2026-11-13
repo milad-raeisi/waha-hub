@@ -815,6 +815,7 @@
   "contacts.role.left": "Ausgetreten",
   "contacts.openChat": "Chat öffnen",
   "contacts.copyNumber": "Nummer kopieren",
+  "contacts.viewPhoto": "Foto ansehen",
   "contacts.copyNumbers": "Telefonnummern kopieren",
   "contacts.copied": "In die Zwischenablage kopiert ({count})",
   "contacts.exportCsv": "CSV exportieren ({count})",

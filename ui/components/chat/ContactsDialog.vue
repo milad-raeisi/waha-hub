@@ -5,6 +5,7 @@
  */
 import {useI18n} from "vue-i18n";
 import {useToast} from "primevue/usetoast";
+import ContactAvatar from "./ContactAvatar.vue";
 import {
   buildMembers,
   downloadText,
@@ -35,11 +36,6 @@ const activeTab = ref(0)
 
 function errorText(e) {
   return e?.response?.data?.message || e?.message || String(e)
-}
-
-function initials(name) {
-  const parts = String(name || '?').replace(/^\+/, '').trim().split(/\s+/).filter(Boolean)
-  return parts.slice(0, 2).map((part) => [...part][0]).join('').toUpperCase() || '?'
 }
 
 async function copyText(text, count) {
@@ -497,7 +493,12 @@ const membersPercent = computed(() => {
             <Column field="displayName" :header="t('contacts.column.name')" sortable>
               <template #body="{ data }">
                 <div class="person">
-                  <Avatar :label="initials(data.displayName)" shape="circle" class="person-avatar"/>
+                  <ContactAvatar
+                      :serverId="serverId"
+                      :sessionName="sessionName"
+                      :id="data.phone ? `${data.phone}@c.us` : data.id"
+                      :name="data.displayName"
+                  />
                   <div class="person-text">
                     <div class="font-medium" dir="auto">{{ data.displayName }}</div>
                     <div v-if="data.pushName && data.pushName !== data.displayName" class="secondary" dir="auto">~{{ data.pushName }}</div>
@@ -640,7 +641,12 @@ const membersPercent = computed(() => {
             <Column field="displayName" :header="t('contacts.column.name')" sortable>
               <template #body="{ data }">
                 <div class="person">
-                  <Avatar :label="initials(data.displayName)" shape="circle" class="person-avatar"/>
+                  <ContactAvatar
+                      :serverId="serverId"
+                      :sessionName="sessionName"
+                      :id="data.phone ? `${data.phone}@c.us` : data.id"
+                      :name="data.displayName"
+                  />
                   <span class="font-medium" dir="auto">{{ data.displayName }}</span>
                 </div>
               </template>
@@ -781,13 +787,6 @@ const membersPercent = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-}
-
-.person-avatar {
-  flex-shrink: 0;
-  background: var(--primary-color);
-  color: var(--primary-color-text);
-  font-size: 0.8rem;
 }
 
 .person-text {
